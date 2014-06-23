@@ -1,0 +1,9 @@
+					pyscreenie
+					
+pyscreenie is a simple Python/Glade/GTK application that presents the user
+with a simple set of choices that will allow them to setup a schedule to 
+take a screenshot of the main desktop.
+
+See the INSTALL file for installation instructions.
+See the AUTHORS file for developer information.
+See the COPYING file for license information.

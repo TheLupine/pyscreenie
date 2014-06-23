@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Name=pyscreenie
+Exec=pyscreenie
+Terminal=false
+Type=Application
+Icon=/usr/share/pyscreenie/pyscreenie-32x32.png
+Comment=Python/Glade/GTK app to grab a timed screenshot
+Categories=GNOME;GTK;Utility;
+

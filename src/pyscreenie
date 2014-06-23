@@ -1,0 +1,344 @@
+#!/usr/bin/env python
+
+"""
+    title:      pyscreenie
+    
+    date:       3.21.2010
+    
+    author:     Lupine  - http://www.thelupine.com
+    
+    description:    Python/GTK/Glade app to capture a screenshot of your desktop.
+    
+"""
+
+import sys, os, glob, signal, time, re, sqlite3, pexpect
+from subprocess import Popen, PIPE
+from gi.repository import Gtk
+     
+APPNAME     = "pyscreenie"
+APPVERSION  = "1.9.4"
+APPCONFDIR  = os.environ["HOME"] + '/.pyscreenie'
+GLADE_FILE  = "/usr/share/pyscreenie/pyscreenie.glade"
+#GLADE_FILE  = "glade/pyscreenie.glade"
+SCHEDULER   = 'pyscreenie-scheduler'
+PIDFILE     = APPCONFDIR + '/pyscreenie.pid'
+CONFIGFILE  = APPCONFDIR + "/config.db"
+
+print "\n\n" + APPNAME + " version " + APPVERSION + ", Copyright (C) 2008 - TheLupine"
+print APPNAME + " comes with ABSOLUTELY NO WARRANTY, is licensed under the"
+print "GNU GENERAL PUBLIC LICENSE and is free and open source software."
+print "http://www.thelupine.com\n\n"
+
+##check for config dir and if needed, create it
+if not os.path.isdir(APPCONFDIR):
+    try:
+        os.mkdir(APPCONFDIR)
+    except:
+        print "Unable to create config dir " + APPCONFDIR
+        sys.exit(1)
+
+class pyscreenie:
+    def startupcleanup(self):
+        """This function will remove any existing PID or conf files"""
+        self.clear_conf_files()
+        self.stop_child()
+
+    def spawn_child(self, datestamp, location, pngorjpg, starttime, repeat, everywhen):
+        """This function will spawn the child process"""
+        child = Popen([SCHEDULER] + [datestamp] + [location] + [pngorjpg] + [starttime]+ [repeat] + [everywhen])
+        pidfile = open(PIDFILE, 'w')
+        pidfile.write(str(child.pid))
+
+    def stop_child(self):
+        """This function will stop the child process"""
+        if os.path.isfile(PIDFILE):
+            pidfile = open(PIDFILE, 'r')
+            pidnum = pidfile.read()
+            if not pidnum == '':
+                try:
+                    os.kill(int(pidnum), signal.SIGUSR1)
+                except OSError:
+                    pass
+            os.unlink(PIDFILE)
+
+    def on_radiobutton_png_clicked(self, widget):
+        """This function will set the compression and spinbutton sensitive to false"""
+        self.label_compression.set_sensitive(False)
+        self.spinbutton_compression.set_sensitive(False)
+    
+    def on_radiobutton_jpg_clicked(self, widget):
+        """This function will set the compression and spinbutton sensitive to true"""
+        self.label_compression.set_sensitive(True)
+        self.spinbutton_compression.set_sensitive(True)
+        
+    def on_about_menu_activate(self, widget, data=None):
+        """This will show the ABOUT dialog"""
+        self.label_version.set_markup('<span weight="bold" size="larger"> ' + \
+                                                            APPNAME + ' ' + \
+                                                            'v' + APPVERSION + \
+                                                            '</span>')
+        self.about_dialog.present()
+        
+    def on_about_dialog_delete_event(self, widget, event=None):
+        """This will close the ABOUT dialog"""
+        self.about_dialog.hide()
+        return True    
+
+    def on_button_enable_clicked(self, widget):
+        """This function will enable the scheduler"""
+        self.button_disable.set_sensitive(True)
+        self.button_disable.set_label('_Disable')
+        self.button_enable.set_sensitive(False)
+        self.button_enable.set_label('_Enabled')
+        datestamp = time.strftime("%H%M%S%d%m%Y", time.localtime())
+            
+        #create the date process file
+        datestampfile = open(APPCONFDIR + '/pyscreenie-' + datestamp + '.conf', 'w')
+        datestampfile.close()
+
+        #get screenie location
+        savepath = self.filechooser_screeniepath.get_uri()
+        location = savepath.replace('file://','')
+        
+        #png or jpg?
+        pngorjpg = ''
+        getcomp = ''
+        if self.radiobutton_png.get_active():
+            pngorjpg = 'png'
+            filetype = 'png'
+        elif self.radiobutton_jpg.get_active():
+            getcomp = self.spinbutton_compression.get_text()
+            filetype = 'jpg'
+            pngorjpg = 'jpg' + getcomp
+            
+        #is it going to repeat?
+        if self.radiobutton_repeatyes.get_active():
+            repeat = 'True'
+        else:
+            repeat = 'False'
+        
+        #if repeating, how often
+        if self.radiobutton_minute.get_active():
+            everywhen = 'minute'
+        elif self.radiobutton_hour.get_active():
+            everywhen = 'hour'
+        elif self.radiobutton_day.get_active():
+            everywhen = 'day'
+        elif self.radiobutton_week.get_active():
+            everywhen = 'week'
+        
+        #when to grab the screenie (and if repeating, when to begin)
+        starthour = self.spinbutton_hour.get_text()
+        if int(starthour) < 10:
+            starthour = "0%s" % (starthour)
+        startmin = self.spinbutton_minute.get_text()
+        if int(startmin) < 10:
+            startmin = "0%s" % (startmin)
+        starttime = "%s%s" % (starthour, startmin)
+
+        #spawn the process
+        self.spawn_child(datestamp, location, pngorjpg, starttime, repeat, everywhen)
+        
+        #update the CONFIGFILE
+        self.update_configfile(savepath, filetype, getcomp, starthour, startmin, \
+                            repeat, everywhen)
+
+    def on_button_disable_clicked(self, widget):
+        """This function will disable the scheduler"""
+        self.button_enable.set_sensitive(True)
+        self.button_enable.set_label('_Enable')
+        self.button_disable.set_sensitive(False)
+        self.button_disable.set_label('_Disabled')
+        self.clear_conf_files()
+        self.stop_child()
+
+    def clear_conf_files(self):
+        """This function will remove all conf files"""
+        filelist = os.listdir(APPCONFDIR + '/')
+        for listedfile in filelist:
+            if re.search('.conf', listedfile):
+                os.unlink(APPCONFDIR + '/' + listedfile)
+    
+    def main_quit(self, action):
+        """This function will clean up everything and properly quit"""
+        self.clear_conf_files()
+        self.stop_child()
+        Gtk.main_quit()
+
+    def check_sqlitedb(self):
+        """
+        This function will check for the sqlite3 file, and if not exist
+        it will create it.  If it does exist, it will perform any DB
+        updates that are needed.
+        """
+        if os.path.isfile(CONFIGFILE):
+            sqlconn = sqlite3.connect(CONFIGFILE)
+            sqlcursor = sqlconn.cursor()
+            sqlcursor.execute('''pragma table_info('options')''')
+            """
+            # this is what the current schema should look like
+            0|id|int|0||0
+            2|savepath|text|0||0
+            3|filetype|text|0||0
+            4|compression|int|0||0
+            5|hour|int|0||0
+            6|minute|int|0||0
+            7|repeat|text|0||0
+            8|repeatevery|text|0||0
+            """
+        else:
+            try:
+                sqlite3.connect(CONFIGFILE)
+            except:
+                errormessage = 'Unable to connect to sqlite3 file:\n' \
+                                + CONFIGFILE + \
+                                '\nYou will not be able to save config options.\n\n'
+                print errormessage
+            else:
+                sqlconn = sqlite3.connect(CONFIGFILE)
+                sqlcursor = sqlconn.cursor()
+                sqlcursor.execute('''create table if not exists options
+                                        (id int,
+                                        savepath text, 
+                                        filetype text, 
+                                        compression int,
+                                        hour int,
+                                        minute int,
+                                        repeat text,
+                                        repeatevery text)''')
+                sqlconn.commit()
+                sqlcursor.execute('''INSERT INTO options VALUES (?,?,?,?,?,?,?,?)
+                                    ''',("0","","png","0","0","0","True","min") )
+                sqlconn.commit()
+                sqlconn.close
+
+    def read_configfile(self):
+        """
+        This function will read in the settings from the sqlite
+        CONFIGFILE file, and populate the necessary values
+        """
+        savepath = ""
+        filetype = ""
+        compression = ""
+        hour = ""
+        minute = ""
+        repeat = ""
+        repeatevery = ""
+        
+        sqlconn = sqlite3.connect(CONFIGFILE)
+        sqlcursor = sqlconn.cursor()
+        #first look through the sqlite db, and assign values to variables
+        for row in sqlcursor.execute("SELECT * FROM options"):
+            if (row[1]):
+                savepath = row[1]
+                self.filechooser_screeniepath.set_uri(savepath)
+
+            if (row[2]):
+                filetype = row[2]
+                if filetype == "png":
+                    self.radiobutton_png.set_active(1)
+                if filetype == "jpg":
+                    self.radiobutton_jpg.set_active(1)
+                    self.label_compression.set_text(compression)
+                
+            if (row[3]):
+                compression = str(row[3])
+                self.spinbutton_compression.set_text(compression)
+                
+            if (row[4]):
+                hour = str(row[4])
+                self.spinbutton_hour.set_text(hour)
+            
+            if (row[5]):
+                minute = str(row[5])
+                self.spinbutton_minute.set_text(minute)
+
+            if (row[6]):
+                repeat = row[6]
+                if repeat == "False":
+                    self.radiobutton_repeatno.set_active(1)
+                else:
+                    self.radiobutton_repeatyes.set_active(1)
+
+            if (row[7]):
+                repeatevery = row[7]
+                if repeatevery == "min":
+                    self.radiobutton_minute.set_active(1)
+                if repeatevery == "hour":
+                    self.radiobutton_hour.set_active(1)
+                if repeatevery == "day":
+                    self.radiobutton_day.set_active(1)
+                if repeatevery == "week":
+                    self.radiobutton_week.set_active(1)
+
+    def update_configfile(self,savepath,filetype,compression,hour, \
+        minute,repeat,repeatevery):
+        """
+        This function will update the CONFIGFILE file
+        """
+        sqlconn = sqlite3.connect(CONFIGFILE)
+        sqlcursor = sqlconn.cursor()
+        values = (savepath,filetype,compression,hour, \
+                    minute,repeat,repeatevery,"0")
+        sqlcursor.execute('''
+                        UPDATE options SET
+                            savepath=?,
+                            filetype=?,
+                            compression=?,
+                            hour=?,
+                            minute=?,
+                            repeat=?,
+                            repeatevery=?
+                        WHERE id=? ''', values)
+        #update and close the database
+        sqlconn.commit()
+        sqlconn.close()
+    
+    def __init__(self):
+        gtkbuilder = Gtk.Builder()
+        gtkbuilder.add_from_file(GLADE_FILE)
+        
+        #glade objects
+        self.prefs_dialog = gtkbuilder.get_object('prefs_dialog')
+        self.label_version = gtkbuilder.get_object('label_version')
+        self.about_dialog = gtkbuilder.get_object('about_dialog')
+        self.radiobutton_repeatyes = gtkbuilder.get_object('radiobutton_repeatyes')
+        self.radiobutton_repeatno = gtkbuilder.get_object('radiobutton_repeatno')
+        self.filechooser_screeniepath = gtkbuilder.get_object('filechooser_screeniepath')
+        self.spinbutton_hour = gtkbuilder.get_object('spinbutton_hour')
+        self.spinbutton_minute = gtkbuilder.get_object('spinbutton_minute')
+        self.radiobutton_minute = gtkbuilder.get_object('radiobutton_minute')
+        self.radiobutton_hour = gtkbuilder.get_object('radiobutton_hour')
+        self.radiobutton_day = gtkbuilder.get_object('radiobutton_day')
+        self.radiobutton_week = gtkbuilder.get_object('radiobutton_week')
+        self.radiobutton_png = gtkbuilder.get_object('radiobutton_png')
+        self.radiobutton_jpg = gtkbuilder.get_object('radiobutton_jpg')
+        self.label_compression = gtkbuilder.get_object('label_compression')
+        self.spinbutton_compression = gtkbuilder.get_object('spinbutton_compression')
+        self.button_disable = gtkbuilder.get_object('button_disable')
+        self.button_enable = gtkbuilder.get_object('button_enable')
+        
+        signals = { 'on_prefs_dialog_destroy' : self.main_quit,
+                    'on_menuitem_about_activate' : self.on_about_menu_activate,
+                    'on_menuitem_quit_activate' : self.main_quit,
+                    'on_about_menu_activate' : self.on_about_menu_activate,
+                    'on_about_close_button_clicked' : self.on_about_dialog_delete_event,
+                    'on_about_dialog_delete_event' : self.on_about_dialog_delete_event,
+                    'on_button_enable_clicked' : self.on_button_enable_clicked,
+                    'on_button_disable_clicked' : self.on_button_disable_clicked,
+                    'on_radiobutton_jpg_clicked' : self.on_radiobutton_jpg_clicked,
+                    'on_radiobutton_png_clicked' : self.on_radiobutton_png_clicked
+                     }
+        gtkbuilder.connect_signals(signals)
+        
+        #cleanup left over PIDs and config files (possibly from a crash or logout)
+        self.startupcleanup()
+
+        #perform some initialization functions
+        self.check_sqlitedb()
+        self.read_configfile()
+
+if __name__ == "__main__":
+    pyscreenie = pyscreenie()
+    Gtk.main()
+    

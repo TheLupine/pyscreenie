@@ -1,0 +1,108 @@
+#!/usr/bin/env python
+
+"""
+    title:      pyscreenie-scheduler
+    
+    date:       2.28.2010
+    
+    author:     Lupine  - http://www.thelupine.com
+    
+    description:    Script should be called from pyscreenie with time parameter
+
+    [datestamp] + [location] + [pngorjpg] + [starttime] + [repeat] + [everywhen]
+"""
+import gtk, os, sys, time, re, pynotify
+
+DATESTAMP   = sys.argv[1]
+LOCATION    = sys.argv[2]
+PNGORJPG    = sys.argv[3]
+STARTTIME   = time.strftime("%H%M", (time.strptime(sys.argv[4],"%H%M")))
+REPEAT      = bool(sys.argv[5])
+EVERYWHEN   = sys.argv[6]
+DAYOFWEEK   = time.strftime("%w", time.localtime())
+
+APPCONFDIR  = os.environ["HOME"] + '/.pyscreenie'
+CONFIGFILE = APPCONFDIR + '/pyscreenie-' + DATESTAMP + '.conf'
+
+def take_a_screenie():
+    """This function will take the screenshot based on the parameters provided"""
+    extension = PNGORJPG
+    format = PNGORJPG
+    quality = PNGORJPG
+    if format != 'png':
+        format = 'jpeg'
+        extension = 'jpg'
+        expr = r'(.*%s)'
+        search = re.compile(expr % 'jpg')
+        quality = re.sub(search,'', quality)
+    datestamp = time.strftime("%Y%m%d%H%M%S", time.localtime())
+    screeniename = LOCATION + "/pyscreenie-" + datestamp + "." + extension
+    desktop = gtk.gdk.get_default_root_window()
+    size = desktop.get_size()
+    pb = gtk.gdk.Pixbuf(gtk.gdk.COLORSPACE_RGB,False,8,size[0],size[1])
+    pb = pb.get_from_drawable(desktop,desktop.get_colormap(),0,0,0,0,size[0],size[1])
+
+    width = gtk.gdk.screen_width()
+    height = gtk.gdk.screen_height()
+    screenshot = gtk.gdk.Pixbuf.get_from_drawable(
+                    gtk.gdk.Pixbuf(gtk.gdk.COLORSPACE_RGB, True, 8, width, height),
+                    gtk.gdk.get_default_root_window(),
+                    gtk.gdk.colormap_get_system(),
+                    0, 0, 0, 0, width, height)
+    if (screenshot != None):
+        if format == 'jpeg':
+            screenshot.save(screeniename, format,  {"quality": quality})
+        else:
+            screenshot.save(screeniename, format)
+        if pynotify.init("pyscreenie"):
+            uri = "file:///usr/share/pyscreenie/pyscreenie-32x32.png"
+            screeniemsg = "\nJust took screenie: " + screeniename
+            n = pynotify.Notification("pyscreenie results", screeniemsg, uri)
+            if not n.show():
+                print screeniemsg
+        return True
+    else:
+        return False
+
+def checkConfigAndSleep():
+    counter = 0
+    while counter < 60:
+        if not os.path.isfile(CONFIGFILE):
+            sys.exit(0)
+        counter += 1
+        time.sleep(1)
+
+#take the initial screenshot at the proper time
+screenie_taken = False
+while not screenie_taken:
+    if STARTTIME == time.strftime("%H%M", time.localtime()):
+        screenie_taken = take_a_screenie()
+    checkConfigAndSleep()
+
+#now check if repeating, and if so start the loop    
+if REPEAT:
+    while os.path.isfile(CONFIGFILE):
+        #every minute is simple, just take a screenie and sleep for 60 seconds
+        if EVERYWHEN == "minute":
+            pass #yes, this is not needed, mainly here for consistency
+        #every hour == check current hour's minute, if it equals STARTTIME's minute
+        #take a screenie, and then sleep for 60 seconds
+        if EVERYWHEN == "hour":
+            while not time.strftime("%M", time.localtime()) == time.strftime("%M", (time.strptime(STARTTIME, "%H%M"))):
+                checkConfigAndSleep()
+        #every day == check current hour:minute and compare to STARTTIME'S
+        #take a screenie, and then sleep for 60 seconds
+        if EVERYWHEN == "day":
+            while not time.strftime("%H%M", time.localtime()) == time.strftime("%H%M", (time.strptime(STARTTIME, "%H%M"))):
+                checkConfigAndSleep()
+        #every week == check current DAYOFWEEK against DAYOFWEEK, and if match
+        # and if STARTIME equals current time
+        #take a screenie, and then sleep for 60 seconds
+        if EVERYWHEN == "week":
+            if DAYOFWEEK == time.strftime("%w", time.localtime()):
+                while not time.strftime("%H%M", time.localtime()) == time.strftime("%H%M", (time.strptime(STARTTIME, "%H%M"))):
+                    checkConfigAndSleep()
+        #finally, after all the loops above, take a screenie and start over
+        take_a_screenie()
+        checkConfigAndSleep()
+

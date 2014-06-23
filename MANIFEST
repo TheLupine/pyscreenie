@@ -1,0 +1,12 @@
+AUTHORS
+COPYING
+INSTALL
+README
+pyscreenie.desktop
+setup.cfg
+setup.py
+glade/pyscreenie-32x32.png
+glade/pyscreenie-64x64.png
+glade/pyscreenie.glade
+src/pyscreenie
+src/pyscreenie-scheduler

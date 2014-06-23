@@ -1,0 +1,2 @@
+include AUTHORS COPYING INSTALL pyscreenie.desktop README src/pyscreenie
+recursive-include glade/ *
