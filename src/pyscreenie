@@ -16,10 +16,9 @@ from subprocess import Popen, PIPE
 from gi.repository import Gtk
      
 APPNAME     = "pyscreenie"
-APPVERSION  = "1.9.4"
+APPVERSION  = "1.9.5"
 APPCONFDIR  = os.environ["HOME"] + '/.pyscreenie'
 GLADE_FILE  = "/usr/share/pyscreenie/pyscreenie.glade"
-#GLADE_FILE  = "glade/pyscreenie.glade"
 SCHEDULER   = 'pyscreenie-scheduler'
 PIDFILE     = APPCONFDIR + '/pyscreenie.pid'
 CONFIGFILE  = APPCONFDIR + "/config.db"
@@ -43,9 +42,9 @@ class pyscreenie:
         self.clear_conf_files()
         self.stop_child()
 
-    def spawn_child(self, datestamp, location, pngorjpg, starttime, repeat, everywhen):
+    def spawn_child(self, datestamp, location, desktopsize, pngorjpg, starttime, repeat):
         """This function will spawn the child process"""
-        child = Popen([SCHEDULER] + [datestamp] + [location] + [pngorjpg] + [starttime]+ [repeat] + [everywhen])
+        child = Popen([SCHEDULER] + [datestamp] + [location] + [desktopsize] + [pngorjpg] + [starttime] + [repeat])
         pidfile = open(PIDFILE, 'w')
         pidfile.write(str(child.pid))
 
@@ -61,19 +60,19 @@ class pyscreenie:
                     pass
             os.unlink(PIDFILE)
 
-    def on_radiobutton_png_clicked(self, widget):
+    def on_png_radiobutton_clicked(self, widget):
         """This function will set the compression and spinbutton sensitive to false"""
         self.label_compression.set_sensitive(False)
-        self.spinbutton_compression.set_sensitive(False)
+        self.jpgcompression_spinbutton.set_sensitive(False)
     
-    def on_radiobutton_jpg_clicked(self, widget):
+    def on_jpg_radiobutton_clicked(self, widget):
         """This function will set the compression and spinbutton sensitive to true"""
         self.label_compression.set_sensitive(True)
-        self.spinbutton_compression.set_sensitive(True)
+        self.jpgcompression_spinbutton.set_sensitive(True)
         
     def on_about_menu_activate(self, widget, data=None):
         """This will show the ABOUT dialog"""
-        self.label_version.set_markup('<span weight="bold" size="larger"> ' + \
+        self.version_label.set_markup('<span weight="bold" size="larger"> ' + \
                                                             APPNAME + ' ' + \
                                                             'v' + APPVERSION + \
                                                             '</span>')
@@ -84,73 +83,67 @@ class pyscreenie:
         self.about_dialog.hide()
         return True    
 
-    def on_button_enable_clicked(self, widget):
-        """This function will enable the scheduler"""
-        self.button_disable.set_sensitive(True)
-        self.button_disable.set_label('_Disable')
-        self.button_enable.set_sensitive(False)
-        self.button_enable.set_label('_Enabled')
-        datestamp = time.strftime("%H%M%S%d%m%Y", time.localtime())
-            
-        #create the date process file
-        datestampfile = open(APPCONFDIR + '/pyscreenie-' + datestamp + '.conf', 'w')
-        datestampfile.close()
+    def on_enable_togglebutton_toggled(self, widget):
+        """This function will enable/disable the scheduler"""
+        if self.enable_togglebutton.get_active() == True:
+            self.enable_togglebutton.set_label('_Enabled')
+            datestamp = time.strftime("%H%M%S%d%m%Y", time.localtime())
+                
+            #create the date process file
+            datestampfile = open(APPCONFDIR + '/pyscreenie-' + datestamp + '.conf', 'w')
+            datestampfile.close()
 
-        #get screenie location
-        savepath = self.filechooser_screeniepath.get_uri()
-        location = savepath.replace('file://','')
-        
-        #png or jpg?
-        pngorjpg = ''
-        getcomp = ''
-        if self.radiobutton_png.get_active():
-            pngorjpg = 'png'
-            filetype = 'png'
-        elif self.radiobutton_jpg.get_active():
-            getcomp = self.spinbutton_compression.get_text()
-            filetype = 'jpg'
-            pngorjpg = 'jpg' + getcomp
+            #get screenie location
+            savepath = self.savepath_filechooserbutton.get_uri()
+            location = savepath.replace('file://','')
             
-        #is it going to repeat?
-        if self.radiobutton_repeatyes.get_active():
-            repeat = 'True'
+            #get desktop size
+            desktopsize = self.desktopsize_comboboxtext_entry.get_text()
+            
+            #png or jpg?
+            pngorjpg = ''
+            getcomp = ''
+            if self.png_radiobutton.get_active():
+                pngorjpg = 'png'
+                filetype = 'png'
+            elif self.jpg_radiobutton.get_active():
+                getcomp = self.jpgcompression_spinbutton.get_text()
+                filetype = 'jpg'
+                pngorjpg = 'jpg' + getcomp
+                
+            #when to grab the screenie (and if repeating, when to begin)
+            starthour = self.starthour_spinbutton.get_text()
+            if int(starthour) < 10:
+                starthour = "0%s" % (starthour)
+            startmin = self.startmin_spinbutton.get_text()
+            if int(startmin) < 10:
+                startmin = "0%s" % (startmin)
+            starttime = "%s%s" % (starthour, startmin)
+            
+            #if repeating, how often
+            if self.repeat_none_radiobutton.get_active():
+                repeat = 'none'
+            if self.repeat_min_radiobutton.get_active():
+                repeat = 'minute'
+            elif self.repeat_hour_radiobutton.get_active():
+                repeat = 'hour'
+            elif self.repeat_day_radiobutton.get_active():
+                repeat = 'day'
+            elif self.repeat_week_radiobutton.get_active():
+                repeat = 'week'
+
+            #spawn the process
+            self.spawn_child(datestamp, location, desktopsize, pngorjpg, starttime, repeat)
+            
+            #update the CONFIGFILE
+            self.update_configfile(savepath, desktopsize, filetype, getcomp, starthour, startmin, repeat)
+            
+            #minimize the main dialog
+            self.prefs_dialog.iconify()
         else:
-            repeat = 'False'
-        
-        #if repeating, how often
-        if self.radiobutton_minute.get_active():
-            everywhen = 'minute'
-        elif self.radiobutton_hour.get_active():
-            everywhen = 'hour'
-        elif self.radiobutton_day.get_active():
-            everywhen = 'day'
-        elif self.radiobutton_week.get_active():
-            everywhen = 'week'
-        
-        #when to grab the screenie (and if repeating, when to begin)
-        starthour = self.spinbutton_hour.get_text()
-        if int(starthour) < 10:
-            starthour = "0%s" % (starthour)
-        startmin = self.spinbutton_minute.get_text()
-        if int(startmin) < 10:
-            startmin = "0%s" % (startmin)
-        starttime = "%s%s" % (starthour, startmin)
-
-        #spawn the process
-        self.spawn_child(datestamp, location, pngorjpg, starttime, repeat, everywhen)
-        
-        #update the CONFIGFILE
-        self.update_configfile(savepath, filetype, getcomp, starthour, startmin, \
-                            repeat, everywhen)
-
-    def on_button_disable_clicked(self, widget):
-        """This function will disable the scheduler"""
-        self.button_enable.set_sensitive(True)
-        self.button_enable.set_label('_Enable')
-        self.button_disable.set_sensitive(False)
-        self.button_disable.set_label('_Disabled')
-        self.clear_conf_files()
-        self.stop_child()
+            self.enable_togglebutton.set_label('_Enable')
+            self.clear_conf_files()
+            self.stop_child()
 
     def clear_conf_files(self):
         """This function will remove all conf files"""
@@ -179,12 +172,12 @@ class pyscreenie:
             # this is what the current schema should look like
             0|id|int|0||0
             2|savepath|text|0||0
-            3|filetype|text|0||0
-            4|compression|int|0||0
-            5|hour|int|0||0
-            6|minute|int|0||0
-            7|repeat|text|0||0
-            8|repeatevery|text|0||0
+            3|desktopsize|text|0||0
+            4|filetype|text|0||0
+            5|compression|int|0||0
+            6|hour|int|0||0
+            7|minute|int|0||0
+            8|repeat|text|0||0
             """
         else:
             try:
@@ -200,15 +193,15 @@ class pyscreenie:
                 sqlcursor.execute('''create table if not exists options
                                         (id int,
                                         savepath text, 
+                                        desktopsize text,
                                         filetype text, 
                                         compression int,
                                         hour int,
                                         minute int,
-                                        repeat text,
-                                        repeatevery text)''')
+                                        repeat text)''')
                 sqlconn.commit()
                 sqlcursor.execute('''INSERT INTO options VALUES (?,?,?,?,?,?,?,?)
-                                    ''',("0","","png","0","0","0","True","min") )
+                                    ''',("0","","Full Desktop","png","0","0","0","min") )
                 sqlconn.commit()
                 sqlconn.close
 
@@ -218,12 +211,12 @@ class pyscreenie:
         CONFIGFILE file, and populate the necessary values
         """
         savepath = ""
+        desktopsize = ""
         filetype = ""
         compression = ""
         hour = ""
         minute = ""
         repeat = ""
-        repeatevery = ""
         
         sqlconn = sqlite3.connect(CONFIGFILE)
         sqlcursor = sqlconn.cursor()
@@ -231,64 +224,61 @@ class pyscreenie:
         for row in sqlcursor.execute("SELECT * FROM options"):
             if (row[1]):
                 savepath = row[1]
-                self.filechooser_screeniepath.set_uri(savepath)
+                self.savepath_filechooserbutton.set_uri(savepath)
 
             if (row[2]):
-                filetype = row[2]
-                if filetype == "png":
-                    self.radiobutton_png.set_active(1)
-                if filetype == "jpg":
-                    self.radiobutton_jpg.set_active(1)
-                    self.label_compression.set_text(compression)
+                desktopsize = str(row[2])
+                self.desktopsize_comboboxtext_entry.set_text(desktopsize)
                 
             if (row[3]):
-                compression = str(row[3])
-                self.spinbutton_compression.set_text(compression)
+                filetype = row[3]
+                if filetype == "png":
+                    self.png_radiobutton.set_active(1)
+                if filetype == "jpg":
+                    self.jpg_radiobutton.set_active(1)
+                    self.label_compression.set_text(compression)
                 
             if (row[4]):
-                hour = str(row[4])
-                self.spinbutton_hour.set_text(hour)
-            
+                compression = str(row[4])
+                self.jpgcompression_spinbutton.set_text(compression)
+                
             if (row[5]):
-                minute = str(row[5])
-                self.spinbutton_minute.set_text(minute)
-
+                hour = str(row[5])
+                self.starthour_spinbutton.set_text(hour)
+            
             if (row[6]):
-                repeat = row[6]
-                if repeat == "False":
-                    self.radiobutton_repeatno.set_active(1)
-                else:
-                    self.radiobutton_repeatyes.set_active(1)
+                minute = str(row[6])
+                self.startmin_spinbutton.set_text(minute)
 
             if (row[7]):
-                repeatevery = row[7]
-                if repeatevery == "min":
-                    self.radiobutton_minute.set_active(1)
-                if repeatevery == "hour":
-                    self.radiobutton_hour.set_active(1)
-                if repeatevery == "day":
-                    self.radiobutton_day.set_active(1)
-                if repeatevery == "week":
-                    self.radiobutton_week.set_active(1)
+                repeat = row[7]
+                if repeat == "none":
+                    self.repeat_none_radiobutton.set_active(1)
+                if repeat == "min":
+                    self.repeat_min_radiobutton.set_active(1)
+                if repeat == "hour":
+                    self.repeat_hour_radiobutton.set_active(1)
+                if repeat == "day":
+                    self.repeat_day_radiobutton.set_active(1)
+                if repeat == "week":
+                    self.repeat_week_radiobutton.set_active(1)
 
-    def update_configfile(self,savepath,filetype,compression,hour, \
-        minute,repeat,repeatevery):
+    def update_configfile(self,savepath,desktopsize,filetype,compression,hour,minute,repeat):
         """
         This function will update the CONFIGFILE file
         """
         sqlconn = sqlite3.connect(CONFIGFILE)
         sqlcursor = sqlconn.cursor()
-        values = (savepath,filetype,compression,hour, \
-                    minute,repeat,repeatevery,"0")
+        values = (savepath,desktopsize,filetype,compression,hour,minute,repeat,"0")
         sqlcursor.execute('''
                         UPDATE options SET
                             savepath=?,
+                            desktopsize=?,
                             filetype=?,
                             compression=?,
                             hour=?,
                             minute=?,
-                            repeat=?,
-                            repeatevery=?
+                            repeat=?
                         WHERE id=? ''', values)
         #update and close the database
         sqlconn.commit()
@@ -300,34 +290,29 @@ class pyscreenie:
         
         #glade objects
         self.prefs_dialog = gtkbuilder.get_object('prefs_dialog')
-        self.label_version = gtkbuilder.get_object('label_version')
+        self.version_label = gtkbuilder.get_object('version_label')
         self.about_dialog = gtkbuilder.get_object('about_dialog')
-        self.radiobutton_repeatyes = gtkbuilder.get_object('radiobutton_repeatyes')
-        self.radiobutton_repeatno = gtkbuilder.get_object('radiobutton_repeatno')
-        self.filechooser_screeniepath = gtkbuilder.get_object('filechooser_screeniepath')
-        self.spinbutton_hour = gtkbuilder.get_object('spinbutton_hour')
-        self.spinbutton_minute = gtkbuilder.get_object('spinbutton_minute')
-        self.radiobutton_minute = gtkbuilder.get_object('radiobutton_minute')
-        self.radiobutton_hour = gtkbuilder.get_object('radiobutton_hour')
-        self.radiobutton_day = gtkbuilder.get_object('radiobutton_day')
-        self.radiobutton_week = gtkbuilder.get_object('radiobutton_week')
-        self.radiobutton_png = gtkbuilder.get_object('radiobutton_png')
-        self.radiobutton_jpg = gtkbuilder.get_object('radiobutton_jpg')
-        self.label_compression = gtkbuilder.get_object('label_compression')
-        self.spinbutton_compression = gtkbuilder.get_object('spinbutton_compression')
-        self.button_disable = gtkbuilder.get_object('button_disable')
-        self.button_enable = gtkbuilder.get_object('button_enable')
+        self.savepath_filechooserbutton = gtkbuilder.get_object('savepath_filechooserbutton')
+        self.starthour_spinbutton = gtkbuilder.get_object('starthour_spinbutton')
+        self.startmin_spinbutton = gtkbuilder.get_object('startmin_spinbutton')
+        self.repeat_none_radiobutton = gtkbuilder.get_object('repeat_none_radiobutton')
+        self.repeat_min_radiobutton = gtkbuilder.get_object('repeat_min_radiobutton')
+        self.repeat_hour_radiobutton = gtkbuilder.get_object('repeat_hour_radiobutton')
+        self.repeat_day_radiobutton = gtkbuilder.get_object('repeat_day_radiobutton')
+        self.repeat_week_radiobutton = gtkbuilder.get_object('repeat_week_radiobutton')
+        self.png_radiobutton = gtkbuilder.get_object('png_radiobutton')
+        self.jpg_radiobutton = gtkbuilder.get_object('jpg_radiobutton')
+        self.jpgcompression_spinbutton = gtkbuilder.get_object('jpgcompression_spinbutton')
+        self.enable_togglebutton = gtkbuilder.get_object('enable_togglebutton')
+        self.desktopsize_comboboxtext_entry = gtkbuilder.get_object('desktopsize_comboboxtext_entry')
         
         signals = { 'on_prefs_dialog_destroy' : self.main_quit,
-                    'on_menuitem_about_activate' : self.on_about_menu_activate,
-                    'on_menuitem_quit_activate' : self.main_quit,
+                    'on_about_menuitem_activate' : self.on_about_menu_activate,
+                    'on_quit_menuitem_activate' : self.main_quit,
                     'on_about_menu_activate' : self.on_about_menu_activate,
                     'on_about_close_button_clicked' : self.on_about_dialog_delete_event,
                     'on_about_dialog_delete_event' : self.on_about_dialog_delete_event,
-                    'on_button_enable_clicked' : self.on_button_enable_clicked,
-                    'on_button_disable_clicked' : self.on_button_disable_clicked,
-                    'on_radiobutton_jpg_clicked' : self.on_radiobutton_jpg_clicked,
-                    'on_radiobutton_png_clicked' : self.on_radiobutton_png_clicked
+                    'on_enable_togglebutton_toggled' : self.on_enable_togglebutton_toggled
                      }
         gtkbuilder.connect_signals(signals)
         

@@ -1,5 +1,11 @@
 ### begin pyscreenie ChangeLog
 
+version 1.9.5 2015-01-14
+    * Fedora 21 release
+    * complete re-code of Glade files
+    * removed disabled/enabled buttons, replaced with togglebutton
+    * added desktopsize
+
 version 1.9.4 2014-06-22
     * Fedora 20 release
 
